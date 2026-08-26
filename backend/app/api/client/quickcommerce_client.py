@@ -29,6 +29,11 @@ class QuickCommerceAPIError(QuickCommerceClientError):
         self.response_data = response_data
 
 
+class QuickCommerceLimitError(QuickCommerceClientError):
+    """Exception raised when API key limit is reached"""
+    pass
+
+
 class QuickCommerceClient:
     """
     Async client for QuickCommerce API.
@@ -123,6 +128,23 @@ class QuickCommerceClient:
                 error_data = e.response.json()
             except:
                 pass
+
+            # Check for API limit errors (402 Payment Required or 429 Too Many Requests)
+            is_limit_error = (
+                e.response.status_code == 402 or
+                (e.response.status_code == 429) or
+                (error_data and isinstance(error_data, dict) and (
+                    "limit" in str(error_data).lower() or
+                    "quota" in str(error_data).lower() or
+                    "exceeded" in str(error_data).lower() or
+                    error_data.get("error", "").lower() in ["limit_reached", "quota_exceeded", "api_limit_reached"]
+                ))
+            )
+
+            if is_limit_error:
+                raise QuickCommerceLimitError(
+                    f"API key limit reached: {error_data.get('message', 'Quota exceeded') if error_data else 'API limit exceeded'}"
+                )
 
             raise QuickCommerceAPIError(
                 message=f"API returned error status: {e.response.status_code}",

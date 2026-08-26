@@ -13,6 +13,10 @@ class LocationSchema(BaseModel):
     """Location information"""
     latitude: float = Field(description="Location latitude")
     longitude: float = Field(description="Location longitude")
+    city: Optional[str] = Field(default=None, description="City name")
+    state: Optional[str] = Field(default=None, description="State name")
+    country: Optional[str] = Field(default=None, description="Country name")
+    formatted_address: Optional[str] = Field(default=None, description="Human-readable location")
 
 
 class PlatformOfferSchema(BaseModel):
@@ -62,6 +66,9 @@ class SearchResponseSchema(BaseModel):
     platforms: List[str] = Field(description="Platforms that were searched")
     total_results: int = Field(description="Total number of matched products")
     results: List[ProductResultSchema] = Field(description="Matched products with comparison")
+    demo: bool = Field(default=False, description="Whether this is demo/fallback data")
+    limit_reached: bool = Field(default=False, description="Whether API key limit was reached")
+    message: Optional[str] = Field(default=None, description="Optional message about data source")
 
 
 class SearchErrorResponse(BaseModel):

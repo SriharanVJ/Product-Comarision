@@ -15,7 +15,10 @@ from app.api.client.quickcommerce_client import (
     QuickCommerceClientError,
     QuickCommerceTimeoutError,
     QuickCommerceAPIError,
+    QuickCommerceLimitError,
 )
+from app.services.fallback_data import FallbackDataService
+from app.services.geocoding import GeocodingService
 from app.services.product_normalizer import ProductNormalizer
 from app.services.product_matcher import ProductMatcher
 from app.services.product_comparison import ProductComparisonService, ProductComparison
@@ -56,6 +59,8 @@ class SearchService:
         normalizer: Optional[ProductNormalizer] = None,
         matcher: Optional[ProductMatcher] = None,
         comparison_service: Optional[ProductComparisonService] = None,
+        fallback_service: Optional[FallbackDataService] = None,
+        geocoding_service: Optional[GeocodingService] = None,
     ):
         """
         Initialize the search service with all required components.
@@ -65,11 +70,23 @@ class SearchService:
             normalizer: Product normalization service
             matcher: Product matching service
             comparison_service: Product comparison service
+            fallback_service: Fallback data service for demo/limit scenarios
+            geocoding_service: Reverse geocoding service for location names
         """
-        self.quickcommerce_client = quickcommerce_client or QuickCommerceClient()
+        # Try to initialize QuickCommerce client, but don't fail if API key is missing
+        self.quickcommerce_client = quickcommerce_client
+        try:
+            if not quickcommerce_client:
+                self.quickcommerce_client = QuickCommerceClient()
+        except ValueError:
+            # API key not configured, will use fallback
+            self.quickcommerce_client = None
+
         self.normalizer = normalizer or ProductNormalizer()
         self.matcher = matcher or ProductMatcher()
         self.comparison_service = comparison_service or ProductComparisonService()
+        self.fallback_service = fallback_service or FallbackDataService()
+        self.geocoding_service = geocoding_service or GeocodingService()
 
     async def search(
         self,
@@ -105,6 +122,21 @@ class SearchService:
         validated_platforms = self._validate_platforms(platforms)
 
         logger.info(f"Searching for '{query}' at location ({latitude}, {longitude})")
+
+        # Get location information (async, doesn't block if it fails)
+        location_info = await self.geocoding_service.reverse_geocode(latitude, longitude)
+
+        # Check if QuickCommerce client is available
+        if not self.quickcommerce_client:
+            logger.warning("QuickCommerce client not configured, using fallback data")
+            return self._get_fallback_response(
+                query=query,
+                latitude=latitude,
+                longitude=longitude,
+                platforms=validated_platforms,
+                limit_reached=False,
+                location_info=location_info,
+            )
 
         try:
             # Step 1: Call QuickCommerce API
@@ -144,8 +176,19 @@ class SearchService:
                 longitude=longitude,
                 platforms=validated_platforms,
                 compared_products=compared_products,
+                location_info=location_info,
             )
 
+        except QuickCommerceLimitError as e:
+            logger.warning(f"QuickCommerce API limit reached: {e}")
+            # Return fallback demo data with limit indicator
+            return self._get_fallback_response(
+                query=query,
+                latitude=latitude,
+                longitude=longitude,
+                platforms=validated_platforms,
+                limit_reached=True,
+            )
         except QuickCommerceTimeoutError as e:
             logger.error(f"QuickCommerce API timeout: {e}")
             raise SearchValidationError("Search request timed out. Please try again.")
@@ -224,6 +267,7 @@ class SearchService:
         longitude: float,
         platforms: List[str],
         compared_products: List[tuple[MatchedProduct, ProductComparison]],
+        location_info: Optional[Dict[str, Any]] = None,
     ) -> SearchResponseSchema:
         """
         Format the final API response.
@@ -234,11 +278,19 @@ class SearchService:
             longitude: Location longitude
             platforms: Platforms that were searched
             compared_products: List of (matched_product, comparison) tuples
+            location_info: Optional geocoded location information
 
         Returns:
             Formatted SearchResponseSchema
         """
-        location = LocationSchema(latitude=latitude, longitude=longitude)
+        location = LocationSchema(
+            latitude=latitude,
+            longitude=longitude,
+            city=location_info.get("city") if location_info else None,
+            state=location_info.get("state") if location_info else None,
+            country=location_info.get("country") if location_info else None,
+            formatted_address=location_info.get("formatted_address") if location_info else None,
+        )
 
         results = []
         for matched_product, comparison in compared_products:
@@ -293,4 +345,36 @@ class SearchService:
             platforms=platforms,
             total_results=len(results),
             results=results,
+        )
+
+    def _get_fallback_response(
+        self,
+        query: str,
+        latitude: float,
+        longitude: float,
+        platforms: List[str],
+        limit_reached: bool = False,
+        location_info: Optional[Dict[str, Any]] = None,
+    ) -> SearchResponseSchema:
+        """
+        Get fallback demo response when API is unavailable or limits are reached.
+
+        Args:
+            query: Original search query
+            latitude: Location latitude
+            longitude: Location longitude
+            platforms: Platforms that were searched
+            limit_reached: Whether this is due to API limit
+            location_info: Optional geocoded location information
+
+        Returns:
+            SearchResponseSchema with demo data and appropriate flags
+        """
+        return self.fallback_service.build_fallback_response(
+            query=query,
+            latitude=latitude,
+            longitude=longitude,
+            platforms=platforms,
+            limit_reached=limit_reached,
+            location_info=location_info,
         )

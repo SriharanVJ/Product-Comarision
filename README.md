@@ -1,25 +1,45 @@
 # QuickCommerce Comparison Platform
 
-A production-quality web application for comparing grocery/quick-commerce products across multiple platforms in India.
+A production-quality web application for comparing grocery/quick-commerce products across multiple platforms in India — search a product once and see prices from Blinkit, Zepto and Swiggy Instamart side by side.
 
-## 🚀 PHASE 1: QuickCommerce API Integration Test
+The stack is developed as a FastAPI backend that queries the QuickCommerce API, normalizes the product/price data and exposes it through its own search endpoints, plus a TanStack Start (React + Vite) frontend — the `app-price-whiz` app — wired to the backend through a hot-reload dev proxy (`/api`). A Makefile + Docker Compose workflow (backend, frontend with a persistent node_modules volume) orchestrates the whole stack — API docs included — so it starts with one command.
 
-**Before running any tests, you need a QuickCommerce API key.**
+## 🚀 Getting started
 
-### Getting Your API Key
-
-1. Visit [QuickCommerce API](https://quickcommerceapi.com)
-2. Sign up for an account
-3. Get your API key from the dashboard
-4. Add it to `backend/.env`:
+### Run with Docker (recommended)
 
 ```bash
+# 0. Clone the frontend app (lives in its own repo, referenced as app-price-whiz/)
+git clone https://github.com/SriharanVJ/app-price-whiz.git app-price-whiz   # skip if already present
+
+# 1. Configure the backend (QuickCommerce API key)
 cd backend
 cp .env.example .env
 # Edit .env and replace QUICKCOMMERCE_API_KEY=your_api_key_here with your actual key
+cd ..
+
+# 2. Build & start backend + frontend
+docker compose up --build -d        # or: make docker-up
+docker compose logs -f              # follow logs (or: make docker-logs)
 ```
 
-### Running PHASE 1 Test
+| Service  | URL                              |
+| -------- | -------------------------------- |
+| Frontend | http://localhost:5173            |
+| API      | http://localhost:8000 (docs at `/docs`) |
+
+Stop with `docker compose down` (or `make docker-down`).
+
+### Run locally (without Docker)
+
+```bash
+make setup          # install deps for backend + app-price-whiz
+make dev            # run backend (:8000) + frontend (:5173) together in one terminal
+```
+
+Or individually: `make backend`, `make whiz`.
+
+## ✅ Verify the QuickCommerce API integration (PHASE 1 test)
 
 This test verifies the QuickCommerce API integration works correctly:
 
@@ -72,9 +92,9 @@ Total products found: 15
 User
 |
 v
-Next.js Web Application
+TanStack Start Web Application (app-price-whiz)
 |
-v
+v  /api dev proxy
 FastAPI Backend
 |
 +-------------------+
@@ -110,7 +130,8 @@ Blinkit       Zepto       Swiggy Instamart
 │   ├── tests/                    # Test suite
 │   ├── requirements.txt
 │   └── .env                      # Environment variables (not in Git)
-├── frontend/                     # Next.js application
+├── app-price-whiz/               # TanStack Start frontend (Vite)
+├── Makefile                      # build & run commands
 └── docker-compose.yml             # Full stack deployment
 ```
 
@@ -140,7 +161,7 @@ Blinkit       Zepto       Swiggy Instamart
 ## 🛠️ Technology Stack
 
 ### Frontend
-- Next.js
+- TanStack Start (React + Vite)
 - TypeScript
 - Tailwind CSS
 
